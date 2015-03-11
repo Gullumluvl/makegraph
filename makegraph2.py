@@ -11,9 +11,10 @@ import re
 import sys
 import fileinput
 
-from imp import find_module, is_builtin, is_frozen  #deprecated but works.
+from imp import find_module, is_builtin, is_frozen
+#deprecated but works.
 #from importlib import import_module #not deprecated but f*** doesn't work
-from modulefinder import ModuleFinder
+#from modulefinder import ModuleFinder
 
 import pypeline.tools
 
@@ -42,11 +43,23 @@ def importedModules(filename):
     modules = []
     for line in fileinput.input([filename]):
         m_import = re.search("^\s*import \S+", line)
-        m_importas = re.search("\s*import \S+ as \S+$")
+        m_importas = re.search("^\s*import \S+ as \S+$", line)
+        m_fromimport = re.search("^\s*from \S+ import .*$", line)
         if m_import:
             modulename = re.search("\S+$", m_import.group(0)).group(0)
             #modules.append(modulename)
             modules.append(findModule(modulename))
+        if m_importas:
+            modulename = re.search('(?<=import )\S+', line).group(0)
+            abbrv = re.search('(?<= as )\S+', line).group(0)
+            modules.append(findModule(modulename))
+            modules[-1]["as"] = abbrv
+        if m_fromimport:
+            modulename = re.search("(?<=from )\S+", line).group(0)
+            importedFct = re.search("(?<= import ).*$", line).group(0).\
+                    split(", ")
+            modules.append(findModule(modulename))
+            modules[-1]["importedFct"] = importedFct
     return modules
 
 
@@ -93,24 +106,30 @@ def main(_argv):
     untested = importedModules(_argv)
     tested = []
     for mod in untested:
-        print ("%s -> %s" %(_argv, mod[0]))
+        print ("\"%s\" -> \"%s\"" %(_argv, mod["name"]))
     while len(untested) > 0:
         fromfile = untested[0]
-        if fromfile["type"] in ["Builtin", "Frozen"]:
+        if fromfile["type"] in ["Builtin", "Frozen",
+                "Not Found (ImportError)"]:
             pass
         elif fromfile["type"] == "Installed":
             pass
         else:
             try:
-                newmodules = importedModules(fromfile[2])
+                newmodules = importedModules(fromfile["path"])
+                for new in newmodules:
+                    print("\"%s\" -> \"%s\"" %(fromfile["name"],
+                                                        new["name"]))
+                    if new not in untested + tested:
+                        untested.append(new)
             except IOError as e:
                 print(e, file=sys.stderr)
-                print("Wrong file was %s" % fromfile[2], file=sys.stderr)
+                print("Wrong file was %s" % (fromfile["path"]),
+                        file=sys.stderr)
+            except KeyError as e:
+                print(e, file=sys.stderr)
+                print("Dictionary is: %s" %fromfile, file=sys.stderr)
             #untested += newmodules  #I should avoid adding one module that has already been tested.
-            for new in newmodules:
-                print("\"%s\" -> \"%s\"" %(fromfile[0], new[0]))
-                if new not in untested + tested:
-                    untested.append(new)
         tested.append(fromfile)
         untested = untested[1:]
     print("\n}\n")
