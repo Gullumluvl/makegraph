@@ -88,28 +88,23 @@ def importedModules(filename):
     modules = []
     with open(filename) as FILE:
         text = FILE.read()
-        #print (text)
         m_import = re.findall(r'^\s*import \S+(?! as )', text, re.MULTILINE)
         m_importas = re.findall(r'^\s*import \S+ as \S+$', text, re.MULTILINE)
-        m_fromimport = re.findall(r'^\s*from \S+ import .*\n\n', text, re.MULTILINE)
-        #print(m_import)
-        #print(m_importas)
-        #print(m_fromimport)
+        m_fromimport = re.findall(r'^\s*from \S+ import \w+(?:,[\s\\\n]*\w+)*', text, re.MULTILINE)
         if m_import:
             modulenames = [re.search("\S+$", m).group(0) for \
                     m in m_import]
-            #modules.append(modulename)
             modules += [findModule(modulename) for modulename in modulenames]
         if m_importas:
             modulenames = [re.search('(?<=import )\S+', m).group(0) \
                     for m in m_importas]
             abbrv = [re.search('(?<= as )\S+', m).group(0) for m in \
                     m_importas]
-            modules += [findModules(modulenames[i], abbrv=abbrv[i]) for i in \
+            modules += [findModule(modulenames[i], abbrv=abbrv[i]) for i in \
                     range(len(modulenames))]
         if m_fromimport:
-            modulenames = [re.search("(?<=from )\S+", m).group(0) for m in m_fromimport]
-            importedFct = [re.findall("[\w.]+", m)[3:] for m in m_fromimport]
+            modulenames = [re.search(r'(?<=from )\S+', m).group(0) for m in m_fromimport]
+            importedFct = [re.findall(r'[\w.]+', m)[3:] for m in m_fromimport]
             modules += [findModule(modulenames[i], importedFct = importedFct[i]) \
                     for i in range(len(modulenames))]
     return modules
@@ -123,9 +118,9 @@ def findModule(modulename, abbrv = None, importedFct = None):
     path = sys.path
     for m in modules:
         if is_builtin(m):
-            return {"name": modulename, "type": "Builtin"}
+            module = {"name": modulename, "type": "Builtin"}
         elif is_frozen(m):
-            return {"name": modulename, "type": "Frozen"}
+            module = {"name": modulename, "type": "Frozen"}
         else:
             try:
                 p = find_module(m, path)
@@ -139,16 +134,16 @@ def findModule(modulename, abbrv = None, importedFct = None):
                 type = "Local"
             else:
                 type = "Installed"
-    module = {"name": modulename,
-        "type": type,
-        "file": p[0],
-        "path": p[1],
-        "details": p[2]} #p is a tuple:
-                            #(file, filename, (suffixe, mode, type))
-                            #exemple from "os":
-            #(<open file '/usr/lib/python2.7/os.py' mode 'U' at 0x7f..>,
-                            #'/usr/lib/python2.7/os.py',
-                            #('.py', 'U', 1))
+            module = {"name": modulename,
+                "type": type,
+                "file": p[0],
+                "path": p[1],
+                "details": p[2]} #p is a tuple:
+                                    #(file, filename, (suffixe, mode, type))
+                                    #exemple from "os":
+                    #(<open file '/usr/lib/python2.7/os.py' mode 'U' at 0x7f..>,
+                                    #'/usr/lib/python2.7/os.py',
+                                    #('.py', 'U', 1))
     if abbrv:
         module["as"] = abbrv
     if importedFct:
@@ -183,14 +178,13 @@ def main(_argv):
                 for new in newmodules:
                     usedFct = usedFunctions(fromfile["path"], new)
                     print("\"%s\" -> \"%s\" [label=\"%s\"]" %(fromfile["name"],
-                                                        new["name"]),
-                                                        ", ".join(usedFct))
-                    if new not in untested + tested:
+                        new["name"], ", ".join(usedFct)))
+                    if new not in untested+tested:
                         untested.append(new)
             except IOError as e:
                 print(e, file=sys.stderr)
-                print("Wrong file was %s" % (fromfile["path"]),
-                        file=sys.stderr)
+                #print("Wrong file was %s" % (fromfile["path"]),
+                #        file=sys.stderr)
             except KeyError as e:
                 print(e, file=sys.stderr)
                 print("Dictionary is: %s" %fromfile, file=sys.stderr)
