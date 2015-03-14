@@ -71,12 +71,13 @@ def usedFunctions(filename, module):
     #    print("In importedModule:\n\t" + filename +
     #           " : filename is a directory", file=sys.stderr)
         filename = os.path.join(filename, "__init__.py")
-        print("in usedFunctions(): Trying with:\n\t" + filename,
-                file=sys.stderr)
+        #print("in usedFunctions():\nTrying with: " + filename,
+        #        file=sys.stderr)
         if not isfile(filename):
-            print(filename + " is not a file.", file=sys.stderr)
+            print("---usedFunctions---: " + filename + " is not a file.",
+                    file=sys.stderr)
             return []
-    print("--> Opening " + filename, file=sys.stderr)
+    print("---usedFunctions--> Opening " + filename, file=sys.stderr)
     with open(filename) as FILE:
         filetext = FILE.read()
         #remove commented lines
@@ -84,29 +85,31 @@ def usedFunctions(filename, module):
         if "importedFct" in module.keys():
             usedFct = set(module["importedFct"])
         elif "as" in module.keys():
-            usedFct = re.findall(r'(?<=%s\.)\w+\(?' % module["as"],
+            usedFct = re.findall(r'(?<=%s\.)[\w\.]+\(?' % module["as"],
                     filetext)
         else:
-            usedFct = re.findall(r'(?<=%s\.)\w+\(?' % module["name"],
+            usedFct = re.findall(r'(?<=%s\.)[\w\.]+\(?' % module["name"],
                     filetext)
     return set(usedFct)
 
 
 def importedModules(filename):
     """Return imported modules in a python script"""
+    print("---importedModules---", file = sys.stderr)
     modules = []
+    allmodulenames = []
     if isdir(filename):
-        print("In importedModule:\n\t" + filename +
+        print("In importedModule:\n" + filename +
                 " : filename is a directory", file=sys.stderr)
         filename = os.path.join(filename, "__init__.py")
-        print("Trying with:\n\t" + filename, file=sys.stderr)
+        #print("Trying with: " + filename, file=sys.stderr)
         if not isfile(filename):
             print(filename + " is not a file.", file=sys.stderr)
             return []
     print("--> Opening " + filename, file=sys.stderr)
     with open(filename) as FILE:
         text = FILE.read()
-        m_import = re.findall(r'^\s*import \S+\b(?! as )', text,
+        m_import = re.findall(r'^\s*import \S+(?=\s*$)', text,
                 re.MULTILINE)
         m_importas = re.findall(r'^\s*import \S+ as \S+$', text,
                 re.MULTILINE)
@@ -116,13 +119,18 @@ def importedModules(filename):
         if m_import:
             modulenames = [re.search("\S+$", m).group(0) for \
                     m in m_import]
-            modulenames = [mod for mod in modulenames if mod not in _ignore]
-            modules += [findModule(mod) for mod in \
-                    modulenames]
+            modulenames = list(set(modulenames))  #remove duplicates
+            allmodulenames += modulenames
+            modulenames = [mod for mod in modulenames if mod not in \
+                    _ignore]
+            modules += [findModule(mod) for mod in modulenames]
         if m_importas:
             modulenames = [re.search('(?<=import )\S+', m).group(0) \
                     for m in m_importas]
-            modulenames = [mod for mod in modulenames if mod not in _ignore]
+            modulenames = list(set(modulenames))  #remove duplicates
+            allmodulenames += modulenames
+            modulenames = [mod for mod in modulenames if mod not in \
+                    _ignore]
             abbrv = [re.search('(?<= as )\S+', m).group(0) for m in \
                     m_importas]
             modules += [findModule(modulenames[i], abbrv=abbrv[i]) for i \
@@ -130,14 +138,23 @@ def importedModules(filename):
         if m_fromimport:
             modulenames = [re.search(r'(?<=from )\S+', m).group(0) for \
                     m in m_fromimport]
-            modulenames = [mod for mod in modulenames if mod not in _ignore]
+            modulenames = list(set(modulenames))  #remove duplicates
+            allmodulenames += modulenames
+            modulenames = [mod for mod in modulenames if mod not in \
+                    _ignore]
             importedFct = [re.findall(r'[\w.]+', m)[3:] for m in \
                     m_fromimport]
             modules += [findModule(modulenames[i],
                 importedFct = importedFct[i]) for i in \
                         range(len(modulenames))]
+    #print some info
+    print("""    Nb of modules found: %s   Not Ignored: %s
+    Modules: %s
+    Not Ignored: %s""" % (len(allmodulenames), len(modules),
+            "  ".join(allmodulenames),
+            "  ".join([mod["name"] for mod in modules])),
+        file = sys.stderr)
     return modules
-
 
 
 
@@ -206,8 +223,7 @@ def main(_argv):
     else:
         L = _maxLevel
     untested = importedModules(_argv[0])
-    print ([u["name"] for u in untested], file=sys.stderr)
-    tested = _ignore
+    tested = []
     for mod in untested:
         if mod["name"] not in tested:
             usedFct = usedFunctions(_argv[0], mod)
@@ -222,7 +238,8 @@ def main(_argv):
             fromfile = untested[0]
             if fromfile["type"] in ["Builtin", "Frozen", "Installed",
                                                 "Not Found (ImportError)"]:
-                print("Ignoring %s module %s" % (fromfile["type"],
+                print("---Main---: Not exploring %s module %s" \
+                       % (fromfile["type"],
                     fromfile["name"]), file=sys.stderr)
             else:
                 try:
