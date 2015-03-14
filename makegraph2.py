@@ -3,7 +3,9 @@
 """
 Create a dot file (graphviz)  showing modules called by a python script.
 For Python 2 code
-USE: ./makegraph.py mysteriousscript.py
+USE: ./makegraph.py mysteriousscript.py [L]
+    where L is the number of recursion you want to perform.
+    i.e. the number of levels you want to check modules.
 """
 
 from __future__ import print_function
@@ -31,8 +33,11 @@ from os.path import isdir, isfile
 #---------------------------------------------------------------------
 #Initialize variables
 #---------------------------------------------------------------------
-ignore = ["os", "sys"] # to avoid displaying these very well known ones
-#ignore += ["pysam"] #because too complex
+_ignore = ["os", "sys"] # to avoid displaying these very well known ones
+#_ignore += ["pysam"] #because too complex
+
+_maxLevel = 10000   #number of iterations to check imported modules.
+            #set to infinite by default.
 
 #---------------------------------------------------------------------
 #functions
@@ -62,6 +67,16 @@ def usedFunctions(filename, module):
     """find functions from a module.
     'module' is a list of dictionaries like returned by
     'importedModules':."""
+    if isdir(filename):
+    #    print("In importedModule:\n\t" + filename +
+    #           " : filename is a directory", file=sys.stderr)
+        filename = os.path.join(filename, "__init__.py")
+        print("in usedFunctions(): Trying with:\n\t" + filename,
+                file=sys.stderr)
+        if not isfile(filename):
+            print(filename + " is not a file.", file=sys.stderr)
+            return []
+    print("--> Opening " + filename, file=sys.stderr)
     with open(filename) as FILE:
         filetext = FILE.read()
         #remove commented lines
@@ -69,9 +84,11 @@ def usedFunctions(filename, module):
         if "importedFct" in module.keys():
             usedFct = set(module["importedFct"])
         elif "as" in module.keys():
-            usedFct = re.findall(r'(?<=%s\.)\w+\(?' % module["as"], filetext)
+            usedFct = re.findall(r'(?<=%s\.)\w+\(?' % module["as"],
+                    filetext)
         else:
-            usedFct = re.findall(r'(?<=%s\.)\w+\(?' % module["name"], filetext)
+            usedFct = re.findall(r'(?<=%s\.)\w+\(?' % module["name"],
+                    filetext)
     return set(usedFct)
 
 
@@ -99,13 +116,13 @@ def importedModules(filename):
         if m_import:
             modulenames = [re.search("\S+$", m).group(0) for \
                     m in m_import]
-            modulenames = [mod for mod in modulenames if mod not in ignore]
+            modulenames = [mod for mod in modulenames if mod not in _ignore]
             modules += [findModule(mod) for mod in \
                     modulenames]
         if m_importas:
             modulenames = [re.search('(?<=import )\S+', m).group(0) \
                     for m in m_importas]
-            modulenames = [mod for mod in modulenames if mod not in ignore]
+            modulenames = [mod for mod in modulenames if mod not in _ignore]
             abbrv = [re.search('(?<= as )\S+', m).group(0) for m in \
                     m_importas]
             modules += [findModule(modulenames[i], abbrv=abbrv[i]) for i \
@@ -113,7 +130,7 @@ def importedModules(filename):
         if m_fromimport:
             modulenames = [re.search(r'(?<=from )\S+', m).group(0) for \
                     m in m_fromimport]
-            modulenames = [mod for mod in modulenames if mod not in ignore]
+            modulenames = [mod for mod in modulenames if mod not in _ignore]
             importedFct = [re.findall(r'[\w.]+', m)[3:] for m in \
                     m_fromimport]
             modules += [findModule(modulenames[i],
@@ -181,42 +198,62 @@ def main(_argv):
             //fontcolor = "black"
         ]
         edge [fontsize = 8]
-            """ % _argv)
-    untested = importedModules(_argv)
-    tested = []
+            """ % _argv[0])
+    i  = 1   #iteration number. Number of levels checked.
+    if len(_argv) >=2:
+        L = _argv[1]
+        print("L = %s" %L, file=sys.stderr)
+    else:
+        L = _maxLevel
+    untested = importedModules(_argv[0])
+    print ([u["name"] for u in untested], file=sys.stderr)
+    tested = _ignore
     for mod in untested:
-        if mod not in tested:
-            usedFct = usedFunctions(_argv, mod)
-            print ("\"%s\" -> \"%s\" [label = \"%s\"]" %(_argv, mod["name"],
-                join_fixedwidth(usedFct)))
-    while len(untested) > 0:
-        fromfile = untested[0]
-        if fromfile["type"] in ["Builtin", "Frozen", "Installed",
-                                            "Not Found (ImportError)"]:
-            print("Ignoring %s module %s" % (fromfile["type"],
-                fromfile["name"]), file=sys.stderr)
-        else:
+        if mod["name"] not in tested:
+            usedFct = usedFunctions(_argv[0], mod)
+            print ("\"%s\" -> \"%s\" [label = \"%s\"]" %
+                    (os.path.basename(_argv[0]),
+                                            mod["name"],
+                                            join_fixedwidth(usedFct)))
+    LevelLength = len(untested)
+    while len(untested) > 0 and i < L :
+        for k in range(LevelLength):
+            newLevelLength = 0
+            fromfile = untested[0]
+            if fromfile["type"] in ["Builtin", "Frozen", "Installed",
+                                                "Not Found (ImportError)"]:
+                print("Ignoring %s module %s" % (fromfile["type"],
+                    fromfile["name"]), file=sys.stderr)
+            else:
+                try:
+                    newmodules = importedModules(fromfile["path"])
+                    for new in newmodules:
+                        usedFct = usedFunctions(fromfile["path"], new)
+                        #reshape string not to exceed fixed width
+                        usedFct_str = join_fixedwidth(usedFct)
+                        print("\"%s\" -> \"%s\" [label=\"%s\"]" %(
+                            fromfile["name"], new["name"], usedFct_str))
+                        if new["name"] not in [u["name"] for u in 
+                                untested] + tested:
+                            untested.append(new)
+                            newLevelLength += 1
+                except IOError as e:
+                    print(e, file=sys.stderr)
+                    print("problem in module: %s" %fromfile,
+                            file=sys.stderr)
+                    #print("Wrong file was %s" % (fromfile["path"]),
+                    #        file=sys.stderr)
+                    #for fct in fromfile["usedFct"]:
+                except KeyError as e:
+                    print(e, file=sys.stderr)
+                    print("Dictionary is: %s" %fromfile, file=sys.stderr)
+            tested.append(fromfile["name"])
             try:
-                newmodules = importedModules(fromfile["path"])
-                for new in newmodules:
-                    usedFct = usedFunctions(fromfile["path"], new)
-                    #reshape usedFct so that it doesnt exceed a fixed width
-                    usedFct_str = join_fixedwidth(usedFct)
-                    print("\"%s\" -> \"%s\" [label=\"%s\"]" %(
-                        fromfile["name"], new["name"], usedFct_str))
-                    if new not in untested+tested:
-                        untested.append(new)
-            except IOError as e:
+                untested = untested[1:]
+            except IndexError as e:
                 print(e, file=sys.stderr)
-                print("problem in module: %s" %fromfile, file=sys.stderr)
-                #print("Wrong file was %s" % (fromfile["path"]),
-                #        file=sys.stderr)
-                #for fct in fromfile["usedFct"]:
-            except KeyError as e:
-                print(e, file=sys.stderr)
-                print("Dictionary is: %s" %fromfile, file=sys.stderr)
-        tested.append(fromfile)
-        untested = untested[1:]
+        LevelLength = newLevelLength
+        i += 1
     print("\n}\n")
 
 
@@ -228,6 +265,6 @@ Description:
 USE: ./makegraph.py mysteriousscript.py
 """)
     else:
-        sys.exit(main(sys.argv[1]))
+        sys.exit(main(sys.argv[1:]))
 
 #print(importedModules(sys.argv[1]))
