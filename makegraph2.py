@@ -1,54 +1,149 @@
 #!/usr/bin/env python
 
 """
-Create a dot file (graphviz)  showing modules called by a python script.
-For Python 2 code
-USE: ./makegraph.py mysteriousscript.py [L]
-    where L is the number of recursion you want to perform.
-    i.e. the number of levels you want to check modules.
+Create a dot file (graphviz) showing modules called from a python script.
+For Python 2 code.
+
+USAGE: ./makegraph2.py <mysteriousscript.py> [-D|--maxdepth=<N>]
+                                             [--notexaminate=<expr>]
+                                             [--ruleout=<expr>]
+       ./makegraph2.py (-h | --help)
+
+OPTIONS:
+  -h --help            Display this help.
+  -D --maxdepth <N>    Maximum depth into called modules. Maximum distance
+                       that the modules will be from the
+                       <mysteriousscript>.
+                       [default: 66666]
+  --notexaminate=<expr>  Python logical expression. When True for a module
+                       {0}, display the module {0} in the graph but do not
+                       search for its invoked modules.
+                       [default: "False"]
+  --ruleout=<expr>     Python logical expression. When True for a module
+                       {0}, do not display module {0} at all.
+                       [default: "not {0}['path'].startswith(\
+"/usr/local/lib/python2.7/dist-packages/pypeline")]
+
+Expression <expr>:
+
+  Special string:  
+    "{0}" represents the module evaluated.
+    "{0}['name']" is the name of the module.
+    "{0}['path']" is its path.
+  
+  Functions (examples):
+    python default logical operators (and, or, not, in, ...)
+    other default python functions (str.startwith())
+    is_builtin, is_frozen  (from module imp)
+  
+  Examples:
+        #Do not rule out any module / examine all modules
+        "False"
+        
+        #Rule out / do not examine "os" and "sys"
+        "{0}['name'] in ['os', 'sys']"
+
+        #Rule out / do not examine builtin or frozen modules
+        "is_builtin({0}['name'])" or is_frozen({0}['name'])"
+
+        #Only modules from the package of interest.
+        "not {0}['path'].startswith("/usr/local/lib/python2.7/dist-packages/pypeline")
 """
 
 from __future__ import print_function
 
+
 import re
 import sys
 import os.path
+import argparse
+import textwrap
 import fileinput
-
 
 from imp import find_module, is_builtin, is_frozen
 from os.path import isdir, isfile
-
-#deprecated but works.
-#from importlib import import_module #not deprecated but f*** doesn't work
-#from modulefinder import ModuleFinder
-
-#import pypeline.tools
-
-#from matplotlib.pyplot import plot, \
-#        show, \
-#        subplot
 
 
 #---------------------------------------------------------------------
 #Initialize variables
 #---------------------------------------------------------------------
 # Number of iterations to check imported modules.
-_maxLevel = 10000
-            #set to infinite by default.
+#_maxdepth = 66666  #set to infinite by default.
 
 # Raw string representing the test to be evaluated to rule out a module
 # object (stored as a dictionary in the script).
 # {0} represents the module object
 # Example: ruleout everything that doesn't belong to the paleomix package
-_ruleout = r'not {0}["path"].startswith("/usr/local/lib/python2.7/dist-packages/pypeline")'
+#_ruleout = r'not {0}["path"].startswith("/usr/local/lib/python2.7/dist-packages/pypeline")'
 # example 2
 #_ruleout = r'{0}["name"] in ["os", "sys", "pysam"]'
 
 
 # Rule for choosing modules to keep but not to examinate:
-_notexaminate = r'is_builtin({0}["name"]) or is_frozen({0}["name"]) or not {0}["path"].startswith("/usr/local")'
+#_notexaminate = r'is_builtin({0}["name"]) or is_frozen({0}["name"]) or not {0}["path"].startswith("/usr/local")'
 
+#---------------------------------
+# Options
+#-------------------------
+
+parser = argparse.ArgumentParser(
+        formatter_class = argparse.RawDescriptionHelpFormatter,
+        usage = "\n\
+    %(prog)s <mysteriousscript.py> [-D|--maxdepth=<N>] \n\
+                                   [--notexaminate=<expr>] \n\
+                                   [--ruleout=<expr>] \n\
+    %(prog)s (-h | --help)",
+        description = "Create a dot file (graphviz) showing modules \
+called from a python script. For Python 2 code.",
+        epilog = textwrap.dedent('''\
+            Expression <expr>:
+
+              Special string:  
+                "{0}" represents the module evaluated.
+                "{0}['name']" is the name of the module.
+                "{0}['path']" is its path.
+              
+              Functions (examples):
+                python default logical operators (and, or, not, in, ...)
+                other default python functions (str.startwith())
+                is_builtin, is_frozen  (from module imp)
+              
+              Examples:
+                #Do not rule out any module / examine all modules
+                "False"
+                
+                #Rule out / do not examine "os" and "sys"
+                "{0}['name'] in ['os', 'sys']"
+
+                #Rule out / do not examine builtin or frozen modules
+                "is_builtin({0}['name'])" or is_frozen({0}['name'])"
+
+                #Only modules from the package of interest [--ruleout default]
+                "not {0}['path'].startswith("/usr/local/lib/python2.7/dist-packages/pypeline")''')) 
+
+parser.add_argument('script', type=str, metavar='<mysteriousscript.py>')
+parser.add_argument('-D', '--maxdepth', metavar='<N>', type=int,
+        default=66666, 
+        help="Maximum depth into called modules, i.e. maximum distance \
+                that the modules will be from the <mysteriousscript.py>\
+                [default: 66666]")
+parser.add_argument('--notexaminate', type=str, metavar='<expr>', 
+        default="False",
+        help="Python logical expression. When True for a module {0}, \
+                display the module {0} in the graph but do not search \
+                for its invoked modules. [default: \"False\"]")
+parser.add_argument('--ruleout', type=str, metavar='<expr>',
+        default="not {0}['path'].startswith(\"/usr/local/lib/python2.7/dist-packages/pypeline\")",
+        help="Python logical expression. When True for a module {0}, do \
+            not display module {0} at all. --ruleout will override \
+            --notexaminate. By default keep only modules from paleomix.")
+args = parser.parse_args()
+
+#for (k,v) in vars(args).iteritems():
+#    print(k + " : " + str(v) , sys.stderr)
+#print(vars(args))
+#print(args)
+#sys.exit()
 
 #---------------------------------------------------------------------
 #functions
@@ -134,7 +229,7 @@ def findModule(modulename, abbrv = None, importedFct = None):
         module["as"] = abbrv
     if importedFct:
         module["importedFct"] = importedFct
-    if eval(_notexaminate.format("module")):
+    if eval(args.notexaminate.format("module")):
         module["NotExaminate"] = 1
     return module
 
@@ -169,7 +264,7 @@ def importedModules(filename):
             allmodulenames += modulenames
             newmodules = [findModule(n) for n in modulenames]
             modules += [new for new in newmodules \
-                    if not eval(_ruleout.format("new"))]
+                    if not eval(args.ruleout.format("new"))]
         if m_importas:
             modulenames = [re.search('(?<=import )\S+', m).group(0) \
                     for m in m_importas]
@@ -180,7 +275,7 @@ def importedModules(filename):
             newmodules = [findModule(modulenames[i], abbrv=abbrv[i]) for \
                     i in range(len(modulenames))]
             modules += [new for new in newmodules \
-                    if not eval(_ruleout.format("new"))]
+                    if not eval(args.ruleout.format("new"))]
         if m_fromimport:
             modulenames = [re.search(r'(?<=from )\S+', m).group(0) for \
                     m in m_fromimport]
@@ -192,7 +287,7 @@ def importedModules(filename):
                                     importedFct = importedFct[i]) \
                         for i in range(len(modulenames))]
             modules += [new for new in newmodules \
-                    if not eval(_ruleout.format("new"))]
+                    if not eval(args.ruleout.format("new"))]
     # print some info
     #print("""    Nb of modules found: %s   Not Ignored: %s
     #Modules Not Ignored: %s""" % (len(allmodulenames), len(modules),
@@ -260,7 +355,7 @@ def DoRound(LevelLength, untested, tested):
     return nextLevelLength, untested, tested
 
 
-def main(_argv):
+def main(args):
     """write links between modules in a .dot file"""
     print("""digraph \"%s\" {
         graph [
@@ -276,20 +371,17 @@ def main(_argv):
             //fontcolor = "black"
         ]
         edge [fontsize = 8]
-            """ % _argv[0])
+            """ % os.path.basename(args.script))
     i  = 0   #iteration number. Number of levels checked.
-    if len(_argv) >= 2:
-        L = int(_argv[1])
-    else:
-        L = _maxLevel
-    untested = [ {"name": os.path.basename(_argv[0]),
-                 "path": _argv[0]} ]
+    
+    untested = [ {"name": os.path.basename(args.script),
+                 "path": args.script} ]
     tested = []
 
     LevelLength = len(untested)
-    while (len(untested) > 0) and (i <= L):
+    while (len(untested) > 0) and (i <= args.maxdepth):
         print ("***** Round i=%s (max: %s) ***** LevelLength = %s" % \
-                (i, L, LevelLength),
+                (i, args.maxdepth, LevelLength),
                 file=sys.stderr)
         #this function updates untested, tested.
         LevelLength, \
@@ -299,14 +391,8 @@ def main(_argv):
     print("\n}\n")
 
 
-if __name__ == '__main__':
-    if len(sys.argv) == 1:
-        print("""Error: Please provide an argument to the script.
-Description:
-    Create a dot file (graphviz)  showing called modules by a python script. For Python2 code.
-USE: ./makegraph.py mysteriousscript.py
-""")
-    else:
-        sys.exit(main(sys.argv[1:]))
+main(args)
+#if __name__ == '__main__':
+#    sys.exit(main(args))
 
 #print(importedModules(sys.argv[1]))
