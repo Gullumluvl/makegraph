@@ -93,7 +93,7 @@ parser = argparse.ArgumentParser(
     %(prog)s <mysteriousscript.py> [-D|--maxdepth=<N>] \n\
                                    [--notexaminate=<expr>] \n\
                                    [--ruleout=<expr>] \n\
-                                   > outfile.dot
+                                   > outfile.dot \n\
     %(prog)s (-h | --help)",
         description = "Create a dot file (graphviz) showing modules \
 called from a python script. For Python 2 code.",
