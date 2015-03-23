@@ -135,7 +135,7 @@ parser.add_argument('--notexaminate', type=str, metavar='<expr>',
                 display the module {0} in the graph but do not search \
                 for its invoked modules. [default: \"False\"]")
 parser.add_argument('--ruleout', type=str, metavar='<expr>',
-        default="not {0}['path'].startswith(\"/usr/local/lib/python2.7/dist-packages/pypeline\")",
+        default="not {0}['name'].startswith(\"pypeline\")",
         help="Python logical expression. When True for a module {0}, do \
             not display module {0} at all. --ruleout will override \
             --notexaminate. By default keep only modules from paleomix.")
@@ -252,28 +252,29 @@ def importedModules(filename):
     print("   --> Opening " + filename, file=sys.stderr)
     with open(filename) as FILE:
         text = FILE.read()
-        m_import = re.findall(r'^\s*import \S+(?=\s*$)', text,
+        # only catch module name:
+        m_import = re.findall(r'^\s*import (\S+)(?=\s*$)', text,
                 re.MULTILINE)
-        m_importas = re.findall(r'^\s*import \S+ as \S+$', text,
+        m_importas = re.findall(r'^\s*import (\S+) as (\S+)$', text,
                 re.MULTILINE)
+        # "from ... import" written in one line: 
         m_fromimport = re.findall(
-                r'^\s*from \S+ import .*[^\\]$', text,
-                re.MULTILINE)
+                r'(^\s*from \S+ import \w+(?:\s*,\s*)?(?:\w+(?:\s*,\s*)?)*)',
+                text, re.MULTILINE)
+        # "from ... import" spanning multiple lines:
+        m_fromimport += re.findall(
+                r'(^\s*from \S+ import \s*\\\n(?:\s*\w+,\s*\\\n)*\s*\w+\s*)',
+                text, re.MULTILINE)
         if m_import:
-            modulenames = [re.search("\S+$", m).group(0) for \
-                    m in m_import]
-            modulenames = list(set(modulenames))  #remove duplicates
+            modulenames = list(set(m_import))  #remove duplicates
             allmodulenames += modulenames
             newmodules = [findModule(n) for n in modulenames]
             modules += [new for new in newmodules \
                     if not eval(args.ruleout.format("new"))]
         if m_importas:
-            modulenames = [re.search('(?<=import )\S+', m).group(0) \
-                    for m in m_importas]
-            modulenames = list(set(modulenames))  #remove duplicates
+            modulenames = [m[0] for m in m_importas]
             allmodulenames += modulenames
-            abbrv = [re.search('(?<= as )\S+', m).group(0) for m in \
-                    m_importas]
+            abbrv = [m[1] for m in m_importas]
             newmodules = [findModule(modulenames[i], abbrv=abbrv[i]) for \
                     i in range(len(modulenames))]
             modules += [new for new in newmodules \
