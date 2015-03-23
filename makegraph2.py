@@ -7,6 +7,7 @@ For Python 2 code.
 USAGE: ./makegraph2.py <mysteriousscript.py> [-D|--maxdepth=<N>]
                                              [--notexaminate=<expr>]
                                              [--ruleout=<expr>]
+                                             > outfile.dot
        ./makegraph2.py (-h | --help)
 
 OPTIONS:
@@ -92,6 +93,7 @@ parser = argparse.ArgumentParser(
     %(prog)s <mysteriousscript.py> [-D|--maxdepth=<N>] \n\
                                    [--notexaminate=<expr>] \n\
                                    [--ruleout=<expr>] \n\
+                                   > outfile.dot
     %(prog)s (-h | --help)",
         description = "Create a dot file (graphviz) showing modules \
 called from a python script. For Python 2 code.",
