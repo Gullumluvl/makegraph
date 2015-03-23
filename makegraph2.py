@@ -1,5 +1,10 @@
 #!/usr/bin/env python
 
+
+### IMPORTANT NOTE: It seems that imp.find_module gives different results
+###                 when the script is launched in shell or in ipython
+
+
 """
 Create a dot file (graphviz) showing modules called from a python script.
 For Python 2 code.
@@ -175,13 +180,14 @@ def usedFunctions(filename, module):
     """find functions from a module.
     'module' is a list of dictionaries like returned by
     'importedModules':."""
-    if isdir(filename):
-    #    print("In importedModule:\n\t" + filename +
-    #           " : filename is a directory", file=sys.stderr)
-        filename = os.path.join(filename, "__init__.py")
-        #print("in usedFunctions():\nTrying with: " + filename,
-        #        file=sys.stderr)
-        if not isfile(filename):
+    if not isfile(filename):
+        if isdir(filename):
+            #    print("In importedModule:\n\t" + filename +
+            #           " : filename is a directory", file=sys.stderr)
+            filename = os.path.join(filename, "__init__.py")
+            #print("in usedFunctions():\nTrying with: " + filename,
+            #        file=sys.stderr)
+        else:
            # print("---usedFunctions---: " + filename + " is not a file.",
            #         file=sys.stderr)
             return []
@@ -191,7 +197,7 @@ def usedFunctions(filename, module):
         #remove commented lines
         text = re.sub(r'^\s*#.*$', '', filetext, flags=re.MULTILINE)
         if "importedFct" in module.keys():
-            usedFct = set(module["importedFct"])
+            usedFct = module["importedFct"]
         elif "as" in module.keys():
             usedFct = re.findall(r'(?<=%s\.)[\w\.]+\(?' % module["as"],
                     filetext)
@@ -241,13 +247,14 @@ def importedModules(filename):
     print("   ---importedModules---", file = sys.stderr)
     modules = []
     allmodulenames = []
-    if isdir(filename):
-        #print("In importedModule:\n" + filename +
-        #        " : filename is a directory", file=sys.stderr)
-        filename = os.path.join(filename, "__init__.py")
-        #print("Trying with: " + filename, file=sys.stderr)
-        if not isfile(filename):
-        #    print(filename + " is not a file.", file=sys.stderr)
+    if not isfile(filename):
+        if isdir(filename):
+            #print("In importedModule:\n" + filename +
+            #        " : filename is a directory", file=sys.stderr)
+            filename = os.path.join(filename, "__init__.py")
+            #print("Trying with: " + filename, file=sys.stderr)
+        else:
+            #    print(filename + " is not a file.", file=sys.stderr)
             return []
     print("   --> Opening " + filename, file=sys.stderr)
     with open(filename) as FILE:
@@ -261,6 +268,9 @@ def importedModules(filename):
         m_fromimport = re.findall(
                 r'(^\s*from \S+ import \w+(?:\s*,\s*)?(?:\w+(?:\s*,\s*)?)*)',
                 text, re.MULTILINE)
+        # "from ... import *"
+        m_fromimport += re.findall(r'(^\s*from \S+ import\s+\*)', text,
+                re.MULTILINE)
         # "from ... import" spanning multiple lines:
         m_fromimport += re.findall(
                 r'(^\s*from \S+ import \s*\\\n(?:\s*\w+,\s*\\\n)*\s*\w+\s*)',
@@ -284,7 +294,7 @@ def importedModules(filename):
                     m in m_fromimport]
             modulenames = list(set(modulenames))  #remove duplicates
             allmodulenames += modulenames
-            importedFct = [re.findall(r'[\w.]+', m)[3:] for m in \
+            importedFct = [re.findall(r'[*.\w]+', m)[3:] for m in \
                     m_fromimport]
             newmodules = [findModule(modulenames[i],
                                     importedFct = importedFct[i]) \
@@ -309,8 +319,8 @@ def DoRound(LevelLength, untested, tested):
     
     for k in range(LevelLength):
         fromfile = untested[0]
-        print("   module %s\n   k = %s   untested = %s\ntested = %s" % \
-                (fromfile["name"], k,
+        print("   module %s\n   path: %s\n   k = %s   untested = %s\n   tested = %s" % \
+                (fromfile["name"], fromfile["path"], k,
                     "  ".join([mod["name"] for mod in untested]),
                     "  ".join(tested)),
             file = sys.stderr)
@@ -323,9 +333,11 @@ def DoRound(LevelLength, untested, tested):
             #    fromfile["name"]), file=sys.stderr)
         else:
             newmodules = importedModules(fromfile["path"])
+            print("NEWMODULES: "+str(newmodules), file=sys.stderr)
             try:
                 for new in newmodules:
                     usedFct = usedFunctions(fromfile["path"], new)
+                    print("USEDFCT: " + str(usedFct), file=sys.stderr)
                     #reshape string not to exceed fixed width
                     usedFct_str = join_fixedwidth(usedFct)
                     print("\"%s\" -> \"%s\" [label=\"%s\"]" %(
@@ -360,6 +372,8 @@ def DoRound(LevelLength, untested, tested):
 
 def main(args):
     """write links between modules in a .dot file"""
+    if not os.path.isfile(args.script):
+        sys.exit("%s is not a regular file. Check the path." % args.script)
     print("""digraph \"%s\" {
         graph [
             rankdir=LR
