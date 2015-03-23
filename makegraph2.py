@@ -255,7 +255,7 @@ def importedModules(filename):
         m_importas = re.findall(r'^\s*import \S+ as \S+$', text,
                 re.MULTILINE)
         m_fromimport = re.findall(
-                r'^\s*from \S+ import (?:[\s\\\n]*[\w,]+)*[^,]$', text,
+                r'^\s*from \S+ import .*[^\\]$', text,
                 re.MULTILINE)
         if m_import:
             modulenames = [re.search("\S+$", m).group(0) for \
